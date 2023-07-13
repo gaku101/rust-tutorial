@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{
     http::StatusCode,
     response::IntoResponse,
@@ -5,8 +6,57 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::net::SocketAddr;
+use std::{
+    collections::HashMap,
+    env,
+    sync::{Arc, RwLock},
+};
+use thiserror::Error;
+
+// ** point 1**
+#[derive(Debug, Error)]
+enum RepositoryError {
+    #[error("NotFound, id is {0}")]
+    NotFound(i32),
+}
+
+// **point 2**
+pub trait TodoRepository: Clone + std::marker::Send + std::marker::Sync + 'static {
+    fn create(&self, payload: CreateTodo) -> Todo;
+    fn find(&self, id: i32) -> Option<Todo>;
+    fn all(&self) -> Vec<Todo>;
+    fn update(&self, id: i32, payload: UpdateTodo) -> anyhow::Result<Todo>;
+    fn delete(&self, id: i32) -> anyhow::Result<()>;
+}
+
+// **point 3**
+pub struct Todo {
+    id: i32,
+    text: String,
+    completed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CreateTodo {
+    text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct UpdateTodo {
+    text: Option<String>,
+    completed: Option<bool>,
+}
+
+impl Todo {
+    pub fn new(id: i32, text: String) -> Self {
+        Self {
+            id,
+            text,
+            completed: false,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -73,12 +123,13 @@ mod test {
     }
 
     #[tokio::test]
-    async fn should_return_user_data(){
+    async fn should_return_user_data() {
         let req = Request::builder()
-        .uri("/users")
-        .method(Method::POST)
-        .header(header::CONTENT_TYPE, mime:: APPLICATION_JSON.as_ref())
-        .body(Body::from(r#"{"username": "田中太郎"}"#)).unwrap();
+            .uri("/users")
+            .method(Method::POST)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+            .body(Body::from(r#"{"username": "田中太郎"}"#))
+            .unwrap();
         let res = create_app().oneshot(req).await.unwrap();
         let bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
         let body: String = String::from_utf8(bytes.to_vec()).unwrap();
